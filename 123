@@ -1,0 +1,665 @@
+-- Cleanup ของเก่าก่อน
+if _G.ESPConnection then
+    _G.ESPConnection:Disconnect()
+    _G.ESPConnection = nil
+end
+
+if _G.ESPDrawings then
+    for _, data in pairs(_G.ESPDrawings) do
+        if data.box       then data.box:Remove() end
+        if data.distance  then data.distance:Remove() end
+        if data.name      then data.name:Remove() end
+        if data.healthBar then data.healthBar:Remove() end
+        if data.healthBg  then data.healthBg:Remove() end
+    end
+    _G.ESPDrawings = {}
+end
+
+if _G.ESPGenDrawings then
+    for _, data in pairs(_G.ESPGenDrawings) do
+        if data.box      then data.box:Remove() end
+        if data.name     then data.name:Remove() end
+        if data.distance then data.distance:Remove() end
+    end
+    _G.ESPGenDrawings = {}
+end
+
+if _G.ESPBatDrawings then
+    for _, data in pairs(_G.ESPBatDrawings) do
+        if data.box      then data.box:Remove() end
+        if data.name     then data.name:Remove() end
+        if data.distance then data.distance:Remove() end
+    end
+    _G.ESPBatDrawings = {}
+end
+
+if _G.ESPTrapDrawings then
+    for _, data in pairs(_G.ESPTrapDrawings) do
+        if data.box      then data.box:Remove() end
+        if data.name     then data.name:Remove() end
+        if data.distance then data.distance:Remove() end
+    end
+    _G.ESPTrapDrawings = {}
+end
+
+-- ==============================
+-- Config
+-- ==============================
+
+local ESPConfig = {
+    Box      = true,
+    Distance = true,
+    Name     = true,
+    Health   = false,
+
+    -- ตัวเลือก Font:
+    -- Drawing.Fonts.UI        (default, บางเบา)
+    -- Drawing.Fonts.System    (system font ทั่วไป)
+    -- Drawing.Fonts.Plex      (IBM Plex Mono, อ่านง่าย แนะนำ)
+    -- Drawing.Fonts.Monospace (monospace คลาสสิก)
+    Font = Drawing.Fonts.Plex,
+}
+
+local FOLDER_CONFIG = {
+    ALIVE  = { top = 2.5, bottom = 2.5 },
+    KILLER = { top = 4,   bottom = 4   },
+    LOBBY  = { top = 2.5, bottom = 2.5 },
+}
+
+local GEN_CONFIG = { top = 2, bottom = 2 }
+local BAT_CONFIG = { top = 3, bottom = 3 }
+
+local GREEN  = Color3.fromRGB(0, 255, 100)
+local YELLOW = Color3.fromRGB(255, 220, 0)
+
+local TRAP_COLOR = Color3.fromRGB(255, 30, 30)  -- แดงเหมือน enemy
+local TRAP_CONFIG = { top = 1, bottom = 1 }
+
+-- ==============================
+-- Main Script
+-- ==============================
+
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+
+local LocalPlayer   = Players.LocalPlayer
+local Camera        = workspace.CurrentCamera
+local playersFolder = workspace:WaitForChild("PLAYERS")
+
+local ALIVE_FOLDER  = playersFolder:WaitForChild("ALIVE")
+local KILLER_FOLDER = playersFolder:WaitForChild("KILLER")
+local LOBBY_FOLDER  = playersFolder:WaitForChild("LOBBY")
+
+local BLUE  = Color3.fromRGB(0, 120, 255)
+local RED   = Color3.fromRGB(255, 30, 30)
+local WHITE = Color3.fromRGB(255, 255, 255)
+
+_G.ESPDrawings    = {}
+_G.ESPGenDrawings = {}
+_G.ESPBatDrawings = {}
+_G.ESPTrapDrawings = {}
+
+-- ==============================
+-- Utility
+-- ==============================
+
+local function getLocalPlayerFolder()
+    for _, folder in ipairs({ALIVE_FOLDER, KILLER_FOLDER, LOBBY_FOLDER}) do
+        for _, child in ipairs(folder:GetChildren()) do
+            if child.Name == LocalPlayer.Name then
+                return folder
+            end
+        end
+    end
+    return nil
+end
+
+local function getBoxBounds(position, topOffset, bottomOffset)
+    local top    = position + Vector3.new(0, topOffset, 0)
+    local bottom = position - Vector3.new(0, bottomOffset, 0)
+
+    local topScreen,    topVisible    = Camera:WorldToViewportPoint(top)
+    local bottomScreen, bottomVisible = Camera:WorldToViewportPoint(bottom)
+
+    if not topVisible and not bottomVisible then return nil end
+
+    local screenTop    = Vector2.new(topScreen.X, topScreen.Y)
+    local screenBottom = Vector2.new(bottomScreen.X, bottomScreen.Y)
+
+    local boxHeight = math.abs(screenBottom.Y - screenTop.Y)
+    local boxWidth  = boxHeight * 0.5
+
+    return Vector2.new(screenTop.X - boxWidth / 2, screenTop.Y), Vector2.new(boxWidth, boxHeight), screenTop, screenBottom
+end
+
+local function getDistanceFromLocal(position)
+    local localHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localHRP then return nil end
+    return math.floor((position - localHRP.Position).Magnitude)
+end
+
+local function getModelCenter(model)
+    local ok, cf = pcall(function() return model:GetBoundingBox() end)
+    if ok then return cf.Position end
+    local hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+    if hrp then return hrp.Position end
+    return nil
+end
+
+local function getHealth(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil, nil end
+    return humanoid.Health, humanoid.MaxHealth
+end
+
+local function getHealthColor(percent)
+    if percent > 0.5 then
+        return Color3.fromRGB(math.floor(255 * (1 - percent) * 2), 255, 0)
+    else
+        return Color3.fromRGB(255, math.floor(255 * percent * 2), 0)
+    end
+end
+
+-- ==============================
+-- Player Drawings
+-- ==============================
+
+local function getDrawings(name)
+    if not _G.ESPDrawings[name] then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Filled    = false
+        box.Visible   = false
+
+        local dist = Drawing.new("Text")
+        dist.Size    = 13
+        dist.Center  = true
+        dist.Outline = true
+        dist.Font    = ESPConfig.Font
+        dist.Visible = false
+
+        local nameTag = Drawing.new("Text")
+        nameTag.Size    = 13
+        nameTag.Center  = true
+        nameTag.Outline = true
+        nameTag.Font    = ESPConfig.Font
+        nameTag.Visible = false
+
+        local healthBg = Drawing.new("Square")
+        healthBg.Thickness = 1
+        healthBg.Filled    = true
+        healthBg.Color     = Color3.fromRGB(0, 0, 0)
+        healthBg.Visible   = false
+
+        local healthBar = Drawing.new("Square")
+        healthBar.Thickness = 1
+        healthBar.Filled    = true
+        healthBar.Visible   = false
+
+        _G.ESPDrawings[name] = {
+            box       = box,
+            distance  = dist,
+            name      = nameTag,
+            healthBg  = healthBg,
+            healthBar = healthBar,
+        }
+    end
+    return _G.ESPDrawings[name]
+end
+
+local function removeDrawings(name)
+    if _G.ESPDrawings[name] then
+        if _G.ESPDrawings[name].box       then _G.ESPDrawings[name].box:Remove() end
+        if _G.ESPDrawings[name].distance  then _G.ESPDrawings[name].distance:Remove() end
+        if _G.ESPDrawings[name].name      then _G.ESPDrawings[name].name:Remove() end
+        if _G.ESPDrawings[name].healthBg  then _G.ESPDrawings[name].healthBg:Remove() end
+        if _G.ESPDrawings[name].healthBar then _G.ESPDrawings[name].healthBar:Remove() end
+        _G.ESPDrawings[name] = nil
+    end
+end
+
+-- ==============================
+-- Generator Drawings
+-- ==============================
+
+local function getGenDrawings(model)
+    if not _G.ESPGenDrawings[model] then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Filled    = false
+        box.Color     = GREEN
+        box.Visible   = false
+
+        local nameTag = Drawing.new("Text")
+        nameTag.Size    = 13
+        nameTag.Center  = true
+        nameTag.Outline = true
+        nameTag.Font    = ESPConfig.Font
+        nameTag.Color   = GREEN
+        nameTag.Text    = "Generator"
+        nameTag.Visible = false
+
+        local dist = Drawing.new("Text")
+        dist.Size    = 13
+        dist.Center  = true
+        dist.Outline = true
+        dist.Font    = ESPConfig.Font
+        dist.Color   = GREEN
+        dist.Visible = false
+
+        _G.ESPGenDrawings[model] = { box = box, name = nameTag, distance = dist }
+    end
+    return _G.ESPGenDrawings[model]
+end
+
+local function removeGenDrawings(model)
+    if _G.ESPGenDrawings[model] then
+        if _G.ESPGenDrawings[model].box      then _G.ESPGenDrawings[model].box:Remove() end
+        if _G.ESPGenDrawings[model].name     then _G.ESPGenDrawings[model].name:Remove() end
+        if _G.ESPGenDrawings[model].distance then _G.ESPGenDrawings[model].distance:Remove() end
+        _G.ESPGenDrawings[model] = nil
+    end
+end
+
+-- ==============================
+-- Battery Drawings
+-- ==============================
+
+local function getBatDrawings(model)
+    if not _G.ESPBatDrawings[model] then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Filled    = false
+        box.Color     = YELLOW
+        box.Visible   = false
+
+        local nameTag = Drawing.new("Text")
+        nameTag.Size    = 13
+        nameTag.Center  = true
+        nameTag.Outline = true
+        nameTag.Font    = ESPConfig.Font
+        nameTag.Color   = YELLOW
+        nameTag.Text    = "Battery"
+        nameTag.Visible = false
+
+        local dist = Drawing.new("Text")
+        dist.Size    = 13
+        dist.Center  = true
+        dist.Outline = true
+        dist.Font    = ESPConfig.Font
+        dist.Color   = YELLOW
+        dist.Visible = false
+
+        _G.ESPBatDrawings[model] = { box = box, name = nameTag, distance = dist }
+    end
+    return _G.ESPBatDrawings[model]
+end
+
+local function removeBatDrawings(model)
+    if _G.ESPBatDrawings[model] then
+        if _G.ESPBatDrawings[model].box      then _G.ESPBatDrawings[model].box:Remove() end
+        if _G.ESPBatDrawings[model].name     then _G.ESPBatDrawings[model].name:Remove() end
+        if _G.ESPBatDrawings[model].distance then _G.ESPBatDrawings[model].distance:Remove() end
+        _G.ESPBatDrawings[model] = nil
+    end
+end
+
+-- ==============================
+-- Trapdrawing
+-- ==============================
+
+local function getTrapDrawings(model)
+    if not _G.ESPTrapDrawings[model] then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Filled    = false
+        box.Color     = TRAP_COLOR
+        box.Visible   = false
+
+        local nameTag = Drawing.new("Text")
+        nameTag.Size    = 13
+        nameTag.Center  = true
+        nameTag.Outline = true
+        nameTag.Font    = ESPConfig.Font
+        nameTag.Color   = TRAP_COLOR
+        nameTag.Text    = "Trap"
+        nameTag.Visible = false
+
+        local dist = Drawing.new("Text")
+        dist.Size    = 13
+        dist.Center  = true
+        dist.Outline = true
+        dist.Font    = ESPConfig.Font
+        dist.Color   = TRAP_COLOR
+        dist.Visible = false
+
+        _G.ESPTrapDrawings[model] = { box = box, name = nameTag, distance = dist }
+    end
+    return _G.ESPTrapDrawings[model]
+end
+
+local function removeTrapDrawings(model)
+    if _G.ESPTrapDrawings[model] then
+        if _G.ESPTrapDrawings[model].box      then _G.ESPTrapDrawings[model].box:Remove() end
+        if _G.ESPTrapDrawings[model].name     then _G.ESPTrapDrawings[model].name:Remove() end
+        if _G.ESPTrapDrawings[model].distance then _G.ESPTrapDrawings[model].distance:Remove() end
+        _G.ESPTrapDrawings[model] = nil
+    end
+end
+
+local function updateTraps()
+    local ok, ignoreFolder = pcall(function()
+        return workspace.IGNORE
+    end)
+
+    local activeModels = {}
+
+    if ok and ignoreFolder then
+        for _, model in ipairs(ignoreFolder:GetChildren()) do
+            if model:IsA("Model") and model.Name == "Trap" then
+                activeModels[model] = true
+
+                local center = getModelCenter(model)
+                if center then
+                    local pos, size, screenTop, screenBottom = getBoxBounds(center, TRAP_CONFIG.top, TRAP_CONFIG.bottom)
+                    local drawings = getTrapDrawings(model)
+
+                    if pos and size then
+                        drawings.box.Position  = pos
+                        drawings.box.Size      = size
+                        drawings.box.Visible   = true
+
+                        drawings.name.Position = Vector2.new(screenTop.X, screenTop.Y - 15)
+                        drawings.name.Visible  = true
+
+                        local dist = getDistanceFromLocal(center)
+                        if dist then
+                            drawings.distance.Text     = dist .. " studs"
+                            drawings.distance.Position = Vector2.new(screenBottom.X, screenBottom.Y + 2)
+                            drawings.distance.Visible  = true
+                        else
+                            drawings.distance.Visible = false
+                        end
+                    else
+                        drawings.box.Visible      = false
+                        drawings.name.Visible     = false
+                        drawings.distance.Visible = false
+                    end
+                end
+            end
+        end
+    end
+
+    for model in pairs(_G.ESPTrapDrawings) do
+        if not activeModels[model] then
+            removeTrapDrawings(model)
+        end
+    end
+end
+
+-- ==============================
+-- Module: Box
+-- ==============================
+
+local function updateBox(drawings, pos, size, color)
+    if not ESPConfig.Box then
+        drawings.box.Visible = false
+        return
+    end
+    drawings.box.Position = pos
+    drawings.box.Size     = size
+    drawings.box.Color    = color
+    drawings.box.Visible  = true
+end
+
+-- ==============================
+-- Module: Distance
+-- ==============================
+
+local function updateDistance(drawings, screenBottom, color, position)
+    if not ESPConfig.Distance then
+        drawings.distance.Visible = false
+        return
+    end
+    local dist = getDistanceFromLocal(position)
+    if not dist then
+        drawings.distance.Visible = false
+        return
+    end
+    drawings.distance.Text     = dist .. " studs"
+    drawings.distance.Color    = color
+    drawings.distance.Position = Vector2.new(screenBottom.X, screenBottom.Y + 2)
+    drawings.distance.Visible  = true
+end
+
+-- ==============================
+-- Module: Name
+-- ==============================
+
+local function updateName(drawings, screenTop, color, player)
+    if not ESPConfig.Name then
+        drawings.name.Visible = false
+        return
+    end
+    drawings.name.Text     = player.DisplayName .. "(@" .. player.Name .. ")"
+    drawings.name.Color    = color
+    drawings.name.Position = Vector2.new(screenTop.X, screenTop.Y - 15)
+    drawings.name.Visible  = true
+end
+
+-- ==============================
+-- Module: Health Bar
+-- ==============================
+
+local function updateHealth(drawings, pos, size, character)
+    if not ESPConfig.Health then
+        drawings.healthBg.Visible  = false
+        drawings.healthBar.Visible = false
+        return
+    end
+
+    local hp, maxHp = getHealth(character)
+    if not hp or not maxHp or maxHp == 0 then
+        drawings.healthBg.Visible  = false
+        drawings.healthBar.Visible = false
+        return
+    end
+
+    local percent   = math.clamp(hp / maxHp, 0, 1)
+    local barWidth  = 3
+    local gap       = 2
+    local barHeight = size.Y
+    local bgX       = pos.X - barWidth - gap
+    local bgY       = pos.Y
+
+    drawings.healthBg.Position = Vector2.new(bgX, bgY)
+    drawings.healthBg.Size     = Vector2.new(barWidth, barHeight)
+    drawings.healthBg.Visible  = true
+
+    local fillHeight = barHeight * percent
+    drawings.healthBar.Position = Vector2.new(bgX, bgY + (barHeight - fillHeight))
+    drawings.healthBar.Size     = Vector2.new(barWidth, fillHeight)
+    drawings.healthBar.Color    = getHealthColor(percent)
+    drawings.healthBar.Visible  = true
+end
+
+-- ==============================
+-- Module: Generator ESP
+-- ==============================
+
+local function updateGenerators()
+    local ok, generatorsFolder = pcall(function()
+        return workspace.MAPS["GAME MAP"].Generators
+    end)
+
+    local activeModels = {}
+
+    if ok and generatorsFolder then
+        for _, model in ipairs(generatorsFolder:GetChildren()) do
+            if model:IsA("Model") then
+                activeModels[model] = true
+
+                local center = getModelCenter(model)
+                if center then
+                    local pos, size, screenTop, screenBottom = getBoxBounds(center, GEN_CONFIG.top, GEN_CONFIG.bottom)
+                    local drawings = getGenDrawings(model)
+
+                    if pos and size then
+                        drawings.box.Position  = pos
+                        drawings.box.Size      = size
+                        drawings.box.Visible   = true
+
+                        drawings.name.Position = Vector2.new(screenTop.X, screenTop.Y - 15)
+                        drawings.name.Visible  = true
+
+                        local dist = getDistanceFromLocal(center)
+                        if dist then
+                            drawings.distance.Text     = dist .. " studs"
+                            drawings.distance.Position = Vector2.new(screenBottom.X, screenBottom.Y + 2)
+                            drawings.distance.Visible  = true
+                        else
+                            drawings.distance.Visible = false
+                        end
+                    else
+                        drawings.box.Visible      = false
+                        drawings.name.Visible     = false
+                        drawings.distance.Visible = false
+                    end
+                end
+            end
+        end
+    end
+
+    for model in pairs(_G.ESPGenDrawings) do
+        if not activeModels[model] then
+            removeGenDrawings(model)
+        end
+    end
+end
+
+-- ==============================
+-- Module: Battery ESP
+-- ==============================
+
+local function updateBatteries()
+    local ok, batteriesFolder = pcall(function()
+        return workspace.MAPS["GAME MAP"].Batteries
+    end)
+
+    local activeModels = {}
+
+    if ok and batteriesFolder then
+        for _, model in ipairs(batteriesFolder:GetChildren()) do
+            if model:IsA("Model") then
+                activeModels[model] = true
+
+                local center = getModelCenter(model)
+                if center then
+                    local pos, size, screenTop, screenBottom = getBoxBounds(center, BAT_CONFIG.top, BAT_CONFIG.bottom)
+                    local drawings = getBatDrawings(model)
+
+                    if pos and size then
+                        drawings.box.Position  = pos
+                        drawings.box.Size      = size
+                        drawings.box.Visible   = true
+
+                        drawings.name.Position = Vector2.new(screenTop.X, screenTop.Y - 15)
+                        drawings.name.Visible  = true
+
+                        local dist = getDistanceFromLocal(center)
+                        if dist then
+                            drawings.distance.Text     = dist .. " studs"
+                            drawings.distance.Position = Vector2.new(screenBottom.X, screenBottom.Y + 2)
+                            drawings.distance.Visible  = true
+                        else
+                            drawings.distance.Visible = false
+                        end
+                    else
+                        drawings.box.Visible      = false
+                        drawings.name.Visible     = false
+                        drawings.distance.Visible = false
+                    end
+                end
+            end
+        end
+    end
+
+    for model in pairs(_G.ESPBatDrawings) do
+        if not activeModels[model] then
+            removeBatDrawings(model)
+        end
+    end
+end
+
+-- ==============================
+-- ESP Loop
+-- ==============================
+
+local function updateESP(folder, folderName, localFolder)
+    local config = FOLDER_CONFIG[folderName]
+
+    for _, child in ipairs(folder:GetChildren()) do
+        if child.Name == LocalPlayer.Name then
+            removeDrawings(child.Name)
+            continue
+        end
+
+        local player = Players:FindFirstChild(child.Name)
+        if not player or not player.Character then
+            removeDrawings(child.Name)
+            continue
+        end
+
+        local drawColor
+        if folder == LOBBY_FOLDER then
+            drawColor = WHITE
+        elseif localFolder == folder then
+            drawColor = BLUE
+        else
+            drawColor = RED
+        end
+
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local pos, size, screenTop, screenBottom = getBoxBounds(hrp.Position, config.top, config.bottom)
+        local drawings = getDrawings(child.Name)
+
+        if pos and size then
+            updateBox(drawings, pos, size, drawColor)
+            updateDistance(drawings, screenBottom, drawColor, hrp.Position)
+            updateName(drawings, screenTop, drawColor, player)
+            updateHealth(drawings, pos, size, player.Character)
+        else
+            drawings.box.Visible       = false
+            drawings.distance.Visible  = false
+            drawings.name.Visible      = false
+            drawings.healthBg.Visible  = false
+            drawings.healthBar.Visible = false
+        end
+    end
+end
+
+_G.ESPConnection = RunService.Heartbeat:Connect(function()
+    local localFolder = getLocalPlayerFolder()
+
+    updateESP(ALIVE_FOLDER,  "ALIVE",  localFolder)
+    updateESP(KILLER_FOLDER, "KILLER", localFolder)
+    updateESP(LOBBY_FOLDER,  "LOBBY",  localFolder)
+    updateGenerators()
+    updateBatteries()
+	updateTraps()
+
+    local allNames = {}
+    for _, folder in ipairs({ALIVE_FOLDER, KILLER_FOLDER, LOBBY_FOLDER}) do
+        for _, child in ipairs(folder:GetChildren()) do
+            allNames[child.Name] = true
+        end
+    end
+
+    for name in pairs(_G.ESPDrawings) do
+        if not allNames[name] then
+            removeDrawings(name)
+        end
+    end
+end)
