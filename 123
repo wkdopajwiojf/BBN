@@ -42,6 +42,25 @@ if _G.ESPTrapDrawings then
     _G.ESPTrapDrawings = {}
 end
 
+if _G.ESPFuseDrawings then
+    for _, data in pairs(_G.ESPFuseDrawings) do
+        if data.box      then data.box:Remove() end
+        if data.name     then data.name:Remove() end
+        if data.distance then data.distance:Remove() end
+    end
+    _G.ESPFuseDrawings = {}
+end
+
+if _G.ESPDoorDrawings then
+    for _, data in pairs(_G.ESPDoorDrawings) do
+        if data.box      then data.box:Remove() end
+        if data.name     then data.name:Remove() end
+        if data.distance then data.distance:Remove() end
+    end
+    _G.ESPDoorDrawings = {}
+end
+
+_G.ESPDoorDrawings = {}
 -- ==============================
 -- Config
 -- ==============================
@@ -57,7 +76,7 @@ local ESPConfig = {
     -- Drawing.Fonts.System    (system font ทั่วไป)
     -- Drawing.Fonts.Plex      (IBM Plex Mono, อ่านง่าย แนะนำ)
     -- Drawing.Fonts.Monospace (monospace คลาสสิก)
-    Font = Drawing.Fonts.Plex,
+    Font = Drawing.Fonts.System,
 }
 
 local FOLDER_CONFIG = {
@@ -74,6 +93,9 @@ local YELLOW = Color3.fromRGB(255, 220, 0)
 
 local TRAP_COLOR = Color3.fromRGB(255, 30, 30)  -- แดงเหมือน enemy
 local TRAP_CONFIG = { top = 1, bottom = 1 }
+
+local PURPLE = Color3.fromRGB(180, 0, 255)
+local DOOR_CONFIG = { top = 3, bottom = 3 }
 
 -- ==============================
 -- Main Script
@@ -98,6 +120,7 @@ _G.ESPDrawings    = {}
 _G.ESPGenDrawings = {}
 _G.ESPBatDrawings = {}
 _G.ESPTrapDrawings = {}
+_G.ESPFuseDrawings = {}
 
 -- ==============================
 -- Utility
@@ -295,6 +318,93 @@ local function getBatDrawings(model)
     return _G.ESPBatDrawings[model]
 end
 
+-- ==============================
+-- Fusebox function
+-- ==============================
+
+local function getFuseDrawings(model)
+    if not _G.ESPFuseDrawings[model] then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Filled    = false
+        box.Color     = YELLOW
+        box.Visible   = false
+
+        local nameTag = Drawing.new("Text")
+        nameTag.Size    = 13
+        nameTag.Center  = true
+        nameTag.Outline = true
+        nameTag.Font    = ESPConfig.Font
+        nameTag.Color   = YELLOW
+        nameTag.Text    = "FuseBox"
+        nameTag.Visible = false
+
+        local dist = Drawing.new("Text")
+        dist.Size    = 13
+        dist.Center  = true
+        dist.Outline = true
+        dist.Font    = ESPConfig.Font
+        dist.Color   = YELLOW
+        dist.Visible = false
+
+        _G.ESPFuseDrawings[model] = { box = box, name = nameTag, distance = dist }
+    end
+    return _G.ESPFuseDrawings[model]
+end
+
+-- ==============================
+-- doors drawing function
+-- ==============================
+
+local function getDoorDrawings(model)
+    if not _G.ESPDoorDrawings[model] then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Filled    = false
+        box.Color     = PURPLE
+        box.Visible   = false
+
+        local nameTag = Drawing.new("Text")
+        nameTag.Size    = 13
+        nameTag.Center  = true
+        nameTag.Outline = true
+        nameTag.Font    = ESPConfig.Font
+        nameTag.Color   = PURPLE
+        nameTag.Text    = "Door"
+        nameTag.Visible = false
+
+        local dist = Drawing.new("Text")
+        dist.Size    = 13
+        dist.Center  = true
+        dist.Outline = true
+        dist.Font    = ESPConfig.Font
+        dist.Color   = PURPLE
+        dist.Visible = false
+
+        _G.ESPDoorDrawings[model] = { box = box, name = nameTag, distance = dist }
+    end
+    return _G.ESPDoorDrawings[model]
+end
+
+local function removeDoorDrawings(model)
+    if _G.ESPDoorDrawings[model] then
+        if _G.ESPDoorDrawings[model].box      then _G.ESPDoorDrawings[model].box:Remove() end
+        if _G.ESPDoorDrawings[model].name     then _G.ESPDoorDrawings[model].name:Remove() end
+        if _G.ESPDoorDrawings[model].distance then _G.ESPDoorDrawings[model].distance:Remove() end
+        _G.ESPDoorDrawings[model] = nil
+    end
+end
+
+local function removeFuseDrawings(model)
+    if _G.ESPFuseDrawings[model] then
+        if _G.ESPFuseDrawings[model].box      then _G.ESPFuseDrawings[model].box:Remove() end
+        if _G.ESPFuseDrawings[model].name     then _G.ESPFuseDrawings[model].name:Remove() end
+        if _G.ESPFuseDrawings[model].distance then _G.ESPFuseDrawings[model].distance:Remove() end
+        _G.ESPFuseDrawings[model] = nil
+    end
+end
+
+-----------------------------------------
 local function removeBatDrawings(model)
     if _G.ESPBatDrawings[model] then
         if _G.ESPBatDrawings[model].box      then _G.ESPBatDrawings[model].box:Remove() end
@@ -542,21 +652,73 @@ end
 -- ==============================
 
 local function updateBatteries()
-    local ok, batteriesFolder = pcall(function()
-        return workspace.MAPS["GAME MAP"].Batteries
+    local ok, ignoreFolder = pcall(function()
+        return workspace.IGNORE
     end)
 
     local activeModels = {}
 
-    if ok and batteriesFolder then
-        for _, model in ipairs(batteriesFolder:GetChildren()) do
+    if ok and ignoreFolder then
+        for _, obj in ipairs(ignoreFolder:GetChildren()) do
+            if obj:IsA("MeshPart") and obj.Name == "Battery" then
+                activeModels[obj] = true
+
+                local center = obj.Position
+                local pos, size, screenTop, screenBottom = getBoxBounds(center, BAT_CONFIG.top, BAT_CONFIG.bottom)
+                local drawings = getBatDrawings(obj)
+
+                if pos and size then
+                    drawings.box.Position  = pos
+                    drawings.box.Size      = size
+                    drawings.box.Visible   = true
+
+                    drawings.name.Position = Vector2.new(screenTop.X, screenTop.Y - 15)
+                    drawings.name.Visible  = true
+
+                    local dist = getDistanceFromLocal(center)
+                    if dist then
+                        drawings.distance.Text     = dist .. " studs"
+                        drawings.distance.Position = Vector2.new(screenBottom.X, screenBottom.Y + 2)
+                        drawings.distance.Visible  = true
+                    else
+                        drawings.distance.Visible = false
+                    end
+                else
+                    drawings.box.Visible      = false
+                    drawings.name.Visible     = false
+                    drawings.distance.Visible = false
+                end
+            end
+        end
+    end
+
+    for model in pairs(_G.ESPBatDrawings) do
+        if not activeModels[model] then
+            removeBatDrawings(model)
+        end
+    end
+end
+
+-- ==============================
+-- Module: fusebox
+-- ==============================
+
+local function updateFuseBoxes()
+    local ok, fuseFolder = pcall(function()
+        return workspace.MAPS["GAME MAP"].FuseBoxes
+    end)
+
+    local activeModels = {}
+
+    if ok and fuseFolder then
+        for _, model in ipairs(fuseFolder:GetChildren()) do
             if model:IsA("Model") then
                 activeModels[model] = true
 
                 local center = getModelCenter(model)
                 if center then
                     local pos, size, screenTop, screenBottom = getBoxBounds(center, BAT_CONFIG.top, BAT_CONFIG.bottom)
-                    local drawings = getBatDrawings(model)
+                    local drawings = getFuseDrawings(model)
 
                     if pos and size then
                         drawings.box.Position  = pos
@@ -584,9 +746,63 @@ local function updateBatteries()
         end
     end
 
-    for model in pairs(_G.ESPBatDrawings) do
+    for model in pairs(_G.ESPFuseDrawings) do
         if not activeModels[model] then
-            removeBatDrawings(model)
+            removeFuseDrawings(model)
+        end
+    end
+end
+
+-- ==============================
+-- Module: Doors
+-- ==============================
+
+local function updateDoors()
+    local ok, doorsFolder = pcall(function()
+        return workspace.MAPS["GAME MAP"].Doors
+    end)
+
+    local activeModels = {}
+
+    if ok and doorsFolder then
+        for _, model in ipairs(doorsFolder:GetChildren()) do
+            if model:IsA("Model") and model.Name == "Door" then
+                activeModels[model] = true
+
+                local center = getModelCenter(model)
+                if center then
+                    local pos, size, screenTop, screenBottom = getBoxBounds(center, DOOR_CONFIG.top, DOOR_CONFIG.bottom)
+                    local drawings = getDoorDrawings(model)
+
+                    if pos and size then
+                        drawings.box.Position  = pos
+                        drawings.box.Size      = size
+                        drawings.box.Visible   = true
+
+                        drawings.name.Position = Vector2.new(screenTop.X, screenTop.Y - 15)
+                        drawings.name.Visible  = true
+
+                        local dist = getDistanceFromLocal(center)
+                        if dist then
+                            drawings.distance.Text     = dist .. " studs"
+                            drawings.distance.Position = Vector2.new(screenBottom.X, screenBottom.Y + 2)
+                            drawings.distance.Visible  = true
+                        else
+                            drawings.distance.Visible = false
+                        end
+                    else
+                        drawings.box.Visible      = false
+                        drawings.name.Visible     = false
+                        drawings.distance.Visible = false
+                    end
+                end
+            end
+        end
+    end
+
+    for model in pairs(_G.ESPDoorDrawings) do
+        if not activeModels[model] then
+            removeDoorDrawings(model)
         end
     end
 end
@@ -648,7 +864,24 @@ _G.ESPConnection = RunService.Heartbeat:Connect(function()
     updateESP(LOBBY_FOLDER,  "LOBBY",  localFolder)
     updateGenerators()
     updateBatteries()
-	updateTraps()
+    updateTraps()
+    updateFuseBoxes()
+    updateDoors()
+
+    -- Auto Gen Complete
+    local gen = LocalPlayer.PlayerGui:FindFirstChild("Gen")
+    if gen then
+        local genEvent = gen:FindFirstChild("GeneratorMain") and gen.GeneratorMain:FindFirstChild("Event")
+        if genEvent then
+            pcall(function()
+                genEvent:FireServer({
+                    Lever = true,
+                    Switches = true,
+                    Wires = true
+                })
+            end)
+        end
+    end
 
     local allNames = {}
     for _, folder in ipairs({ALIVE_FOLDER, KILLER_FOLDER, LOBBY_FOLDER}) do
@@ -660,6 +893,122 @@ _G.ESPConnection = RunService.Heartbeat:Connect(function()
     for name in pairs(_G.ESPDrawings) do
         if not allNames[name] then
             removeDrawings(name)
+        end
+    end
+end)
+
+---------------stamina---------------------
+-- Decompiled & Modified for Stamina Bypass
+local v1 = game:GetService("UserInputService")
+local v_u_2 = game:GetService("Players").LocalPlayer
+local v_u_3 = v_u_2.Character or v_u_2.CharacterAdded:Wait()
+local v4 = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Warp"))
+local v_u_5 = v4.Client("Input")
+local v_u_6 = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Keybinds"))
+local v_u_7 = v4.Client("Reset")
+
+local function hookCharacter(char)
+    v_u_3 = char
+    char:WaitForChild("Humanoid"):GetPropertyChangedSignal("Health"):Connect(function()
+        if char.Humanoid.Health == 0 then
+            v_u_7:Fire(true)
+        end
+    end)
+end
+
+-- Hook character ปัจจุบัน
+hookCharacter(v_u_3)
+
+-- Hook ทุกครั้งที่ respawn
+v_u_2.CharacterAdded:Connect(function(char)
+    hookCharacter(char)
+end)
+
+task.spawn(function()
+    repeat
+        local v8 = pcall(function()
+            game:GetService("StarterGui"):SetCore("ResetButtonCallback", true)
+        end)
+        task.wait(1)
+    until v8
+end)
+
+local v_u_9 = false
+local v_u_10 = false
+
+v1.InputBegan:Connect(function(p11, p12)
+    if p12 then
+        return
+    elseif table.find(v_u_6.Run, p11.KeyCode) then
+        v_u_10 = true
+        if v_u_2:GetAttribute("HoldToRun") then
+            v_u_5:Fire(true, { true, Enum.KeyCode.LeftShift.Value })
+        else
+            v_u_9 = not v_u_9
+            v_u_5:Fire(true, { v_u_9, Enum.KeyCode.LeftShift.Value })
+        end
+    elseif table.find(v_u_6.Flashlight, p11.KeyCode) then
+        v_u_5:Fire(true, { "Flashlight" })
+    elseif table.find(v_u_6.Crouch, p11.KeyCode) then
+        v_u_5:Fire(true, { "Crouch" })
+    end
+end)
+
+v1.InputEnded:Connect(function(p13, _)
+    if table.find(v_u_6.Run, p13.KeyCode) then
+        if v_u_2:GetAttribute("HoldToRun") then
+            v_u_5:Fire(true, { false, Enum.KeyCode.LeftShift.Value })
+        end
+        v_u_10 = false
+    end
+end)
+
+local v_u_14 = false
+game:GetService("Players").LocalPlayer.PlayerGui.UI.UI:WaitForChild("MobileOverlay").Holder.Sprint.Button.MouseButton1Down:Connect(function()
+    v_u_14 = true
+    if v_u_2:GetAttribute("HoldToRun") then
+        v_u_5:Fire(true, { true, Enum.KeyCode.LeftShift.Value })
+    else
+        v_u_9 = not v_u_9
+        v_u_5:Fire(true, { v_u_9, Enum.KeyCode.LeftShift.Value })
+    end
+end)
+
+game:GetService("Players").LocalPlayer.PlayerGui.UI.UI:WaitForChild("MobileOverlay").Holder.Sprint.Button.MouseButton1Up:Connect(function()
+    if v_u_2:GetAttribute("HoldToRun") then
+        v_u_5:Fire(true, { false, Enum.KeyCode.LeftShift.Value })
+    end
+    v_u_14 = false
+end)
+
+game:GetService("Players").LocalPlayer.PlayerGui.UI.UI:WaitForChild("MobileOverlay").Holder.Crouch.Button.MouseButton1Click:Connect(function()
+    v_u_5:Fire(true, { "Crouch" })
+end)
+
+-- Modified Heartbeat for Stamina Bypass
+game:GetService("RunService").Heartbeat:Connect(function()
+    local char = v_u_2.Character
+    if not char then return end
+
+    char:SetAttribute("Stamina", 100)
+    char:SetAttribute("CanRun", true)
+
+    if v_u_2:GetAttribute("HoldToRun") and (v_u_10 or v_u_14) then
+        if not char:GetAttribute("Running") then
+            v_u_5:Fire(true, { true, Enum.KeyCode.LeftShift.Value })
+            char:SetAttribute("Running", true)
+            return
+        end
+    elseif v_u_2:GetAttribute("HoldToRun") == false and v_u_9 then
+        if v_u_9 ~= char:GetAttribute("Running") then
+            v_u_5:Fire(true, { v_u_9, Enum.KeyCode.LeftShift.Value })
+            char:SetAttribute("Running", v_u_9)
+            return
+        end
+    elseif not (v_u_10 or v_u_14 or v_u_9) then
+        if char:GetAttribute("Running") then
+            v_u_5:Fire(true, { false, Enum.KeyCode.LeftShift.Value })
+            char:SetAttribute("Running", false)
         end
     end
 end)
