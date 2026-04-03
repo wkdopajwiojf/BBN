@@ -1,0 +1,116 @@
+task.spawn(function()
+    while true do
+        -- Decompiled & Modified for Stamina Bypass
+        local v1 = game:GetService("UserInputService")
+        local v_u_2 = game:GetService("Players").LocalPlayer
+        local v_u_3 = v_u_2.Character or v_u_2.CharacterAdded:Wait()
+        local v4 = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Warp"))
+        local v_u_5 = v4.Client("Input")
+        local v_u_6 = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Keybinds"))
+        local v_u_7 = v4.Client("Reset")
+
+        local function hookCharacter(char)
+            v_u_3 = char
+            char:WaitForChild("Humanoid"):GetPropertyChangedSignal("Health"):Connect(function()
+                if char.Humanoid.Health == 0 then
+                    v_u_7:Fire(true)
+                end
+            end)
+        end
+
+        hookCharacter(v_u_3)
+
+        v_u_2.CharacterAdded:Connect(function(char)
+            hookCharacter(char)
+        end)
+
+        task.spawn(function()
+            repeat
+                local v8 = pcall(function()
+                    game:GetService("StarterGui"):SetCore("ResetButtonCallback", true)
+                end)
+                task.wait(1)
+            until v8
+        end)
+
+        local v_u_9 = false
+        local v_u_10 = false
+
+        v1.InputBegan:Connect(function(p11, p12)
+            if p12 then return end
+            if table.find(v_u_6.Run, p11.KeyCode) then
+                v_u_10 = true
+                if v_u_2:GetAttribute("HoldToRun") then
+                    v_u_5:Fire(true, { true, Enum.KeyCode.LeftShift.Value })
+                else
+                    v_u_9 = not v_u_9
+                    v_u_5:Fire(true, { v_u_9, Enum.KeyCode.LeftShift.Value })
+                end
+            elseif table.find(v_u_6.Flashlight, p11.KeyCode) then
+                v_u_5:Fire(true, { "Flashlight" })
+            elseif table.find(v_u_6.Crouch, p11.KeyCode) then
+                v_u_5:Fire(true, { "Crouch" })
+            end
+        end)
+
+        v1.InputEnded:Connect(function(p13, _)
+            if table.find(v_u_6.Run, p13.KeyCode) then
+                if v_u_2:GetAttribute("HoldToRun") then
+                    v_u_5:Fire(true, { false, Enum.KeyCode.LeftShift.Value })
+                end
+                v_u_10 = false
+            end
+        end)
+
+        local v_u_14 = false
+        game:GetService("Players").LocalPlayer.PlayerGui.UI.UI:WaitForChild("MobileOverlay").Holder.Sprint.Button.MouseButton1Down:Connect(function()
+            v_u_14 = true
+            if v_u_2:GetAttribute("HoldToRun") then
+                v_u_5:Fire(true, { true, Enum.KeyCode.LeftShift.Value })
+            else
+                v_u_9 = not v_u_9
+                v_u_5:Fire(true, { v_u_9, Enum.KeyCode.LeftShift.Value })
+            end
+        end)
+
+        game:GetService("Players").LocalPlayer.PlayerGui.UI.UI:WaitForChild("MobileOverlay").Holder.Sprint.Button.MouseButton1Up:Connect(function()
+            if v_u_2:GetAttribute("HoldToRun") then
+                v_u_5:Fire(true, { false, Enum.KeyCode.LeftShift.Value })
+            end
+            v_u_14 = false
+        end)
+
+        game:GetService("Players").LocalPlayer.PlayerGui.UI.UI:WaitForChild("MobileOverlay").Holder.Crouch.Button.MouseButton1Click:Connect(function()
+            v_u_5:Fire(true, { "Crouch" })
+        end)
+
+        game:GetService("RunService").Heartbeat:Connect(function()
+            local char = v_u_2.Character
+            if not char then return end
+
+            char:SetAttribute("Stamina", 100)
+            char:SetAttribute("CanRun", true)
+
+            if v_u_2:GetAttribute("HoldToRun") and (v_u_10 or v_u_14) then
+                if not char:GetAttribute("Running") then
+                    v_u_5:Fire(true, { true, Enum.KeyCode.LeftShift.Value })
+                    char:SetAttribute("Running", true)
+                    return
+                end
+            elseif v_u_2:GetAttribute("HoldToRun") == false and v_u_9 then
+                if v_u_9 ~= char:GetAttribute("Running") then
+                    v_u_5:Fire(true, { v_u_9, Enum.KeyCode.LeftShift.Value })
+                    char:SetAttribute("Running", v_u_9)
+                    return
+                end
+            elseif not (v_u_10 or v_u_14 or v_u_9) then
+                if char:GetAttribute("Running") then
+                    v_u_5:Fire(true, { false, Enum.KeyCode.LeftShift.Value })
+                    char:SetAttribute("Running", false)
+                end
+            end
+        end)
+
+        task.wait(10)
+    end
+end)
