@@ -1,0 +1,50 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+if _G.DotConnection then
+    _G.DotConnection:Disconnect()
+    _G.DotConnection = nil
+end
+
+if _G.DotWatcher then
+    _G.DotWatcher:Disconnect()
+    _G.DotWatcher = nil
+end
+
+local function startDotLock()
+    if _G.DotConnection then
+        _G.DotConnection:Disconnect()
+        _G.DotConnection = nil
+    end
+
+    _G.DotConnection = RunService.Heartbeat:Connect(function()
+        local dot_ui = Players.LocalPlayer.PlayerGui:FindFirstChild("Dot")
+        if not dot_ui then
+            _G.DotConnection:Disconnect()
+            _G.DotConnection = nil
+            return
+        end
+
+        local container = dot_ui:FindFirstChild("Container")
+        if not container then return end
+
+        local dot = container:FindFirstChild("Frame")
+        if not dot then return end
+
+        local size = container.AbsoluteSize
+        dot.Position = UDim2.new(0, size.X / 2, 0, size.Y / 2)
+    end)
+end
+
+-- ถ้า Dot มีอยู่แล้วตอนรัน
+if Players.LocalPlayer.PlayerGui:FindFirstChild("Dot") then
+    startDotLock()
+end
+
+-- คอย detect ตอน Dot spawn เข้ามาใหม่
+_G.DotWatcher = Players.LocalPlayer.PlayerGui.ChildAdded:Connect(function(child)
+    if child.Name == "Dot" then
+        task.wait(0.1) -- รอให้ UI โหลดก่อน
+        startDotLock()
+    end
+end)
